@@ -1,0 +1,133 @@
+---
+title: "credit_card"
+author: "Quỳnh Anh"
+date: "2026-06-24"
+output: html_document
+---
+# 1. Nạp thư viện
+```{r}
+library(dplyr)    
+library(tidyr) 
+library(rio)
+```
+
+# 2. Đọc dữ liệu
+```{r}
+raw <- read.csv("credit_card.csv", stringsAsFactors = FALSE)
+View(raw)
+
+glimpse(raw)
+summary(raw)
+```
+
+# 3. Làm sạch dữ liệu
+## 3.1. Kiểm tra các biến phân loại
+```{r}
+# Kiểm tra
+table(raw$SEX)
+table(raw$default.payment.next.month)
+table(raw$EDUCATION)
+table(raw$MARRIAGE)
+
+# Gộp mã biến EDUCATION về nhóm 4
+clean <- raw %>% 
+  mutate(EDUCATION = if_else(EDUCATION %in% c(0, 5, 6), 4, EDUCATION))
+
+# Gộp mã biến MARRIAGE về nhóm 3
+clean <- clean %>% 
+  mutate(MARRIAGE = if_else(MARRIAGE == 0, 3, MARRIAGE))
+
+unique(clean$EDUCATION)
+unique(clean$MARRIAGE)
+```
+
+## 3.2. Kiểm tra NA và chuỗi rỗng
+```{r}
+anyNA(clean)
+sum(clean == "NULL", na.rm = TRUE)
+sum(clean == "", na.rm = TRUE)
+```
+
+## 3.3. Kiểm tra trùng lặp 
+```{r}
+any(duplicated(clean))
+sum(duplicated(clean$ID))
+```
+
+# 4. Tạo biến mới
+```{r}
+# Phân tổ nhóm tuổi
+clean <- clean %>% 
+  mutate(age_group = case_when(clean$AGE < 30 ~ "1. Dưới 30 tuổi",
+                           clean$AGE >= 30 & clean$AGE <= 40 ~ "2. Từ 30 đến 40 tuổi",
+                           clean$AGE > 40 & clean$AGE <= 50 ~ "3. Từ 41 đến 50 tuổi",
+                           TRUE ~ "4. Trên 50 tuổi"))
+table(clean$age_group)
+
+# Phân tổ hạn mức tín dụng
+clean <- clean %>%
+  mutate(limit_group = case_when(LIMIT_BAL < 50000 ~ "1. Thấp (Dưới 50000)",
+    LIMIT_BAL >= 50000 & LIMIT_BAL <= 200000 ~ "2. Trung bình (Từ 50000 đến 200000)",
+    TRUE ~ "3. Cao (Trên 200000)"))
+table(clean$limit_group)
+
+# Số tháng trễ trên 2 tháng
+clean <- clean %>%
+  mutate(late = (PAY_0 >= 2) + (PAY_2 >= 2) + (PAY_3 >= 2) +
+                      (PAY_4 >= 2) + (PAY_5 >= 2) + (PAY_6 >= 2))
+table(clean$late)
+
+# Biến phân loại từng trễ 
+clean <- clean %>% 
+  mutate(ever_late = if_else(late > 0, 1, 0))
+table(clean$ever_late)
+
+# Tỷ lệ thanh toán từng tháng
+clean <- clean %>%
+  mutate(pay_ratio_1 = if_else(BILL_AMT1 > 0, PAY_AMT1 / BILL_AMT1, 1),
+    pay_ratio_2 = if_else(BILL_AMT2 > 0, PAY_AMT2 / BILL_AMT2, 1),
+    pay_ratio_3 = if_else(BILL_AMT3 > 0, PAY_AMT3 / BILL_AMT3, 1),
+    pay_ratio_4 = if_else(BILL_AMT4 > 0, PAY_AMT4 / BILL_AMT4, 1),
+    pay_ratio_5 = if_else(BILL_AMT5 > 0, PAY_AMT5 / BILL_AMT5, 1),
+    pay_ratio_6 = if_else(BILL_AMT6 > 0, PAY_AMT6 / BILL_AMT6, 1),
+    avg_pay_ratio = (pay_ratio_1 + pay_ratio_2 + pay_ratio_3 +  
+                   pay_ratio_4 + pay_ratio_5 + pay_ratio_6) / 6,
+    avg_pay_ratio = if_else(avg_pay_ratio > 1, 1, avg_pay_ratio))
+summary(clean$avg_pay_ratio)
+
+# Phân tổ tỷ lệ thanh toán trung bình
+clean <- clean %>%
+  mutate(pay_ratio_group = case_when(
+    avg_pay_ratio < 0.2  ~ "1. Dưới 20%",
+    avg_pay_ratio < 0.5  ~ "2. Từ 20% đến 50%",
+    avg_pay_ratio < 1.0  ~ "3. Từ 50% đến 100%",
+    TRUE ~ "4. Trên 100%"))
+table(clean$pay_ratio_group)
+```
+
+# 5. Gắn nhãn
+```{r}
+clean <- clean %>%
+  mutate(SEX_label = if_else(SEX == 1, "Nam", "Nữ"),
+         EDUCATION_label = case_when(
+           EDUCATION == 1 ~ "Sau đại học",
+           EDUCATION == 2 ~ "Đại học",
+           EDUCATION == 3 ~ "Trung học",
+           EDUCATION == 4 ~ "Khác"),
+         MARRIAGE_label = case_when(
+           MARRIAGE == 1 ~ "Đã kết hôn",
+           MARRIAGE == 2 ~ "Độc thân",
+           MARRIAGE == 3 ~ "Khác"),
+         DEFAULT_label = if_else(default.payment.next.month == 1, "Nợ xấu", "Bình thường"),
+         PAY_0_label    = case_when(
+           PAY_0 <= 0 ~ "Đúng hạn/ Không dư nợ",
+           PAY_0 == 1 ~ "Trễ 1 tháng",
+           PAY_0 == 2 ~ "Trễ 2 tháng",
+           PAY_0 >= 3 ~ "Trễ 3+ tháng"))
+```
+
+# 6. Xuất file
+```{r}
+export(clean, "credit_card_clean.csv")
+```
+
